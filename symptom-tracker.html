@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reizdarm Symptom-Tagebuch</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#0d0d1a;color:#e0e0f0;font-family:'Segoe UI',sans-serif}
+    input[type=range]{width:100%;cursor:pointer}
+    input[type=date],input[type=time],input[type=text],textarea{background:#1a1a2a;border:1px solid #2a2a3a;border-radius:10px;color:#e0e0f0;padding:9px 12px;font-size:13px;font-family:inherit;width:100%}
+    textarea{resize:vertical}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect} = React;
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbygMo2_wkwaMUQTvjlmRjAKu6SqyZxwe1YHjQfUngJlxKqZ57hX5eoA4otizsSEpxYF/exec";
+
+async function syncToSheets(entry) {
+  try {
+    await fetch(SHEETS_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"application/json"},body:JSON.stringify(entry)});
+    return true;
+  } catch(e) { return false; }
+}
+
+const FOOD_CATEGORIES = [
+  {category:"🥩 Protein",foods:[
+    {id:"huhn",label:"Huhn / Pute",f:false},{id:"rind",label:"Rind / Schwein",f:false},
+    {id:"fisch",label:"Fisch / Meeresfrüchte",f:false},{id:"eier",label:"Eier",f:false},
+    {id:"tofu",label:"Tofu / Tempeh",f:false},{id:"hülsenfrüchte",label:"Linsen / Kichererbsen",f:true},
+    {id:"bohnen",label:"Bohnen",f:true}]},
+  {category:"🌾 Kohlenhydrate",foods:[
+    {id:"reis",label:"Reis",f:false},{id:"kartoffeln",label:"Kartoffeln",f:false},
+    {id:"quinoa",label:"Quinoa / Hirse",f:false},{id:"hafer",label:"Haferflocken",f:false},
+    {id:"weizen",label:"Weizenbrot / Pasta",f:true},{id:"roggen",label:"Roggenbrot",f:true},
+    {id:"vollkorn",label:"Vollkornprodukte",f:true}]},
+  {category:"🥦 Gemüse",foods:[
+    {id:"karotten",label:"Karotten",f:false},{id:"zucchini",label:"Zucchini / Gurke",f:false},
+    {id:"paprika",label:"Paprika",f:false},{id:"spinat",label:"Spinat / Salat",f:false},
+    {id:"tomaten",label:"Tomaten",f:false},{id:"brokkoli",label:"Brokkoli / Blumenkohl",f:true},
+    {id:"kohl",label:"Kohl / Rosenkohl",f:true},{id:"zwiebeln",label:"Zwiebeln / Lauch",f:true},
+    {id:"knoblauch",label:"Knoblauch",f:true},{id:"pilze",label:"Pilze",f:true},{id:"spargel",label:"Spargel",f:true}]},
+  {category:"🍎 Obst",foods:[
+    {id:"banane",label:"Banane",f:false},{id:"beeren",label:"Beeren",f:false},
+    {id:"trauben",label:"Trauben / Kiwi",f:false},{id:"orange",label:"Orange / Mandarine",f:false},
+    {id:"äpfel",label:"Äpfel / Birnen",f:true},{id:"mango",label:"Mango / Pfirsich",f:true},
+    {id:"wassermelone",label:"Wassermelone",f:true},{id:"trockenfrüchte",label:"Trockenfrüchte",f:true}]},
+  {category:"🥛 Milch",foods:[
+    {id:"laktosefrei",label:"Laktosefreie Produkte",f:false},{id:"hartkäse",label:"Hartkäse",f:false},
+    {id:"milch",label:"Kuhmilch / Joghurt",f:true},{id:"weichkäse",label:"Weichkäse",f:true},
+    {id:"sahne",label:"Sahne / Schmand",f:true}]},
+  {category:"🫙 Sonstiges",foods:[
+    {id:"nüsse",label:"Nüsse / Samen",f:false},{id:"olivenöl",label:"Olivenöl",f:false},
+    {id:"kaffee",label:"Kaffee",f:false},{id:"alkohol",label:"Alkohol",f:true},
+    {id:"proteinshake",label:"Proteinshake / Whey",f:true},{id:"supplements",label:"Supplements",f:false},
+    {id:"süßungsmittel",label:"Süßungsmittel",f:true}]}
+];
+const ALL_FOODS = FOOD_CATEGORIES.flatMap(c=>c.foods);
+const SYMPTOMS = [
+  {id:"blähungen",label:"Blähungen",icon:"💨"},{id:"bauchschmerzen",label:"Bauchschmerzen",icon:"😣"},
+  {id:"völlegefühl",label:"Völlegefühl",icon:"🫃"},{id:"übelkeit",label:"Übelkeit",icon:"🤢"},
+  {id:"durchfall",label:"Durchfall",icon:"🚽"},{id:"verstopfung",label:"Verstopfung",icon:"🔒"},
+  {id:"bauchkrämpfe",label:"Bauchkrämpfe",icon:"⚡"},{id:"sodbrennen",label:"Sodbrennen",icon:"🔥"},
+  {id:"müdigkeit",label:"Müdigkeit",icon:"😴"},{id:"kopfschmerzen",label:"Kopfschmerzen",icon:"🤕"},
+  {id:"stimmung",label:"Schlechte Stimmung",icon:"😔"},{id:"konzentration",label:"Konzentrationsprobleme",icon:"🌫️"}
+];
+const BRISTOL=[
+  {id:1,label:"Typ 1",desc:"Einzelne harte Klümpchen",color:"#7c3f1e"},
+  {id:2,label:"Typ 2",desc:"Wurstartig, klumpig",color:"#a0522d"},
+  {id:3,label:"Typ 3",desc:"Wurstartig, Risse",color:"#8b6914"},
+  {id:4,label:"Typ 4",desc:"Glatt, weich (ideal)",color:"#3d8b37"},
+  {id:5,label:"Typ 5",desc:"Weiche Klümpchen",color:"#d4a017"},
+  {id:6,label:"Typ 6",desc:"Breiig, ausgefranst",color:"#c05c00"},
+  {id:7,label:"Typ 7",desc:"Wässrig, flüssig",color:"#b03030"}
+];
+const STRESS=["Sehr gering","Gering","Mittel","Hoch","Sehr hoch"];
+const SLEEP_Q=["Sehr schlecht","Schlecht","Ok","Gut","Sehr gut"];
+const CYCLE=["Menstruation","Follikelphase","Ovulation","Lutealphase"];
+const SPORT_T=["Laufen","Radfahren","Schwimmen","Krafttraining","Kampfsport","Mannschaftssport","Yoga / Dehnen","Anderes"];
+
+const todayStr=()=>new Date().toISOString().split("T")[0];
+const emptyEntry=()=>({
+  date:todayStr(),meals:[{time:"08:00",foods:[],note:""}],
+  symptoms:{},symptomTime:"",bristol:null,bowelCount:0,
+  waterMl:1500,stress:2,sleep:3,sleepHours:7,cycle:"",
+  sport:{done:false,type:"",duration:45,intensity:5},note:""
+});
+
+function Tag({label,active,onClick,accent="#c084fc",small=false}){
+  return <button onClick={onClick} style={{padding:small?"4px 10px":"6px 13px",borderRadius:20,fontSize:small?11:12,fontWeight:600,border:active?`2px solid ${accent}`:"2px solid #2a2a3a",background:active?`${accent}22`:"#1a1a2a",color:active?accent:"#555",cursor:"pointer"}}>{label}</button>;
+}
+function Card({children,style={}}){
+  return <div style={{background:"#13131f",border:"1px solid #2a2a3a",borderRadius:16,padding:"20px",marginBottom:14,...style}}>{children}</div>;
+}
+function STitle({children}){
+  return <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.12em",color:"#c084fc",textTransform:"uppercase",marginBottom:14}}>{children}</div>;
+}
+function Slider({label,value,onChange,min=0,max=10,color="#c084fc",unit=""}){
+  return <div style={{marginBottom:14}}>
+    <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+      <span style={{fontSize:13,color:"#a0a0b0"}}>{label}</span>
+      <span style={{fontSize:13,fontWeight:700,color}}>{value}{unit}</span>
+    </div>
+    <input type="range" min={min} max={max} value={value} onChange={e=>onChange(Number(e.target.value))} style={{accentColor:color}}/>
+  </div>;
+}
+
+function analyze(entries){
+  if(entries.length<2)return null;
+  const map={};
+  entries.forEach(e=>{
+    const total=Object.values(e.symptoms).reduce((a,b)=>a+b,0);
+    e.meals.forEach(m=>m.foods.forEach(fid=>{
+      if(!map[fid])map[fid]={total:0,count:0};
+      map[fid].total+=total;map[fid].count++;
+    }));
+  });
+  const ranked=Object.entries(map).filter(([,v])=>v.count>=2)
+    .map(([id,v])=>({id,avg:v.total/v.count,label:ALL_FOODS.find(f=>f.id===id)?.label||id,count:v.count}))
+    .sort((a,b)=>b.avg-a.avg).slice(0,5);
+  const sf={};
+  entries.forEach(e=>Object.entries(e.symptoms).forEach(([id,val])=>{if(val>0)sf[id]=(sf[id]||0)+1;}));
+  const topSym=Object.entries(sf).sort((a,b)=>b[1]-a[1])[0];
+  return{ranked,avgStress:entries.reduce((a,e)=>a+e.stress,0)/entries.length,avgSleep:entries.reduce((a,e)=>a+e.sleep,0)/entries.length,avgWater:entries.reduce((a,e)=>a+e.waterMl,0)/entries.length,topSym,n:entries.length};
+}
+
+function App(){
+  const [entries,setEntries]=useState(()=>{try{const s=localStorage.getItem("ibs-entries");return s?JSON.parse(s):[]}catch{return[]}});
+  const [cur,setCur]=useState(emptyEntry());
+  const [view,setView]=useState("entry");
+  const [expanded,setExpanded]=useState(null);
+  const [toast,setToast]=useState("");
+  const [syncing,setSyncing]=useState(false);
+
+  useEffect(()=>{try{localStorage.setItem("ibs-entries",JSON.stringify(entries))}catch(e){}},[entries]);
+
+  const upd=(f,v)=>setCur(c=>({...c,[f]:v}));
+  const toggleFood=(mi,fid)=>setCur(c=>{const meals=[...c.meals];meals[mi]={...meals[mi],foods:meals[mi].foods.includes(fid)?meals[mi].foods.filter(x=>x!==fid):[...meals[mi].foods,fid]};return{...c,meals}});
+  const toggleSym=id=>setCur(c=>({...c,symptoms:{...c.symptoms,[id]:c.symptoms[id]?0:5}}));
+  const addMeal=()=>{const t=["08:00","10:30","13:00","16:00","19:00","21:00"][Math.min(cur.meals.length,5)];setCur(c=>({...c,meals:[...c.meals,{time:t,foods:[],note:""}]}))};
+  const save=async()=>{
+    const entry={...cur};
+    setEntries(e=>[entry,...e]);
+    setCur(emptyEntry());
+    setView("log");
+    setSyncing(true);
+    const ok=await syncToSheets(entry);
+    setSyncing(false);
+    setToast(ok?"✓ Gespeichert & synchronisiert!":"✓ Lokal gespeichert (Sync fehlgeschlagen)");
+    setTimeout(()=>setToast(""),3000);
+  };
+  const del=i=>{if(window.confirm("Löschen?"))setEntries(e=>e.filter((_,j)=>j!==i))};
+  const exportCSV=()=>{
+    const rows=[["Datum","Mahlzeiten","Symptome","Symptomlast","Bristol","Stuhlgang","Wasser ml","Schlaf","Schlafdauer","Stress","Zyklus","Sport","Notiz"]];
+    entries.forEach(e=>{
+      const meals=e.meals.map(m=>`${m.time}: ${m.foods.map(f=>ALL_FOODS.find(x=>x.id===f)?.label).join(", ")}${m.note?" + "+m.note:""}`).join(" | ");
+      const syms=Object.entries(e.symptoms).filter(([,v])=>v>0).map(([id,v])=>`${SYMPTOMS.find(s=>s.id===id)?.label}(${v}/10)`).join(", ");
+      rows.push([e.date,meals,syms,Object.values(e.symptoms).reduce((a,b)=>a+b,0),e.bristol?`Typ ${e.bristol}`:"",e.bowelCount,e.waterMl,SLEEP_Q[e.sleep],e.sleepHours+"h",STRESS[e.stress],e.cycle,e.sport.done?`${e.sport.type} ${e.sport.duration}min`:"Nein",e.note]);
+    });
+    const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const a=document.createElement("a");a.href="data:text/csv;charset=utf-8,\uFEFF"+encodeURIComponent(csv);a.download="symptom-tagebuch.csv";a.click();
+  };
+
+  const fodmapWarn=cur.meals.some(m=>m.foods.some(f=>ALL_FOODS.find(x=>x.id===f)?.f));
+  const stats=analyze(entries);
+  const navs=[["entry","Eintrag"],["log",`Verlauf (${entries.length})`],["stats","Auswertung"]];
+
+  return <div style={{minHeight:"100vh",maxWidth:540,margin:"0 auto",padding:"24px 16px 60px"}}>
+    {toast&&<div style={{position:"fixed",top:20,right:20,background:"#34d399",color:"#0d0d1a",padding:"10px 20px",borderRadius:12,fontWeight:700,fontSize:14,zIndex:999,maxWidth:280,textAlign:"center"}}>{toast}</div>}
+    {syncing&&<div style={{position:"fixed",top:20,right:20,background:"#1a1a2a",border:"1px solid #c084fc",color:"#c084fc",padding:"10px 20px",borderRadius:12,fontWeight:700,fontSize:14,zIndex:999}}>⏳ Synchronisiere...</div>}
+
+    <div style={{marginBottom:24}}>
+      <div style={{fontSize:11,letterSpacing:"0.2em",color:"#c084fc",fontWeight:700,marginBottom:4}}>REIZDARM-TAGEBUCH</div>
+      <div style={{fontSize:24,fontWeight:800,color:"#fff",lineHeight:1.2}}>Symptom &<br/>Ernährungs-Tracker</div>
+      <div style={{marginTop:14,display:"flex",gap:6,flexWrap:"wrap"}}>
+        {navs.map(([id,label])=><button key={id} onClick={()=>setView(id)} style={{padding:"7px 14px",borderRadius:20,fontSize:12,fontWeight:700,background:view===id?"#c084fc":"#1a1a2a",color:view===id?"#0d0d1a":"#666",border:"none",cursor:"pointer"}}>{label}</button>)}
+      </div>
+    </div>
+
+    {view==="entry"&&<>
+      <Card><STitle>📅 Datum</STitle><input type="date" value={cur.date} onChange={e=>upd("date",e.target.value)}/></Card>
+
+      <Card>
+        <STitle>🍽️ Mahlzeiten</STitle>
+        <div style={{fontSize:12,color:"#444",marginBottom:12}}><span style={{color:"#f87171"}}>■</span> FODMAP-reich &nbsp; <span style={{color:"#34d399"}}>■</span> FODMAP-arm</div>
+        {cur.meals.map((meal,mi)=><div key={mi} style={{marginBottom:18,paddingBottom:18,borderBottom:mi<cur.meals.length-1?"1px solid #1e1e30":"none"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+            <span style={{fontSize:12,color:"#c084fc",fontWeight:700}}>Mahlzeit {mi+1}</span>
+            <input type="time" value={meal.time} style={{width:"auto"}} onChange={e=>{const m=[...cur.meals];m[mi]={...m[mi],time:e.target.value};upd("meals",m)}}/>
+            {cur.meals.length>1&&<button onClick={()=>setCur(c=>({...c,meals:c.meals.filter((_,i)=>i!==mi)}))} style={{marginLeft:"auto",background:"none",border:"none",color:"#444",cursor:"pointer",fontSize:18}}>×</button>}
+          </div>
+          {FOOD_CATEGORIES.map(cat=>{
+            const key=`${mi}-${cat.category}`;
+            const chosen=cat.foods.filter(f=>meal.foods.includes(f.id)).length;
+            return <div key={key} style={{marginBottom:8}}>
+              <button onClick={()=>setExpanded(expanded===key?null:key)} style={{background:"none",border:"none",color:"#666",fontSize:12,cursor:"pointer",padding:"2px 0",display:"flex",alignItems:"center",gap:4}}>
+                <span style={{fontSize:10}}>{expanded===key?"▼":"▶"}</span> {cat.category}
+                {chosen>0&&<span style={{color:"#c084fc",fontSize:10}}>({chosen} gewählt)</span>}
+              </button>
+              {expanded===key&&<div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:6,paddingLeft:12}}>
+                {cat.foods.map(f=><Tag key={f.id} label={f.label} small active={meal.foods.includes(f.id)} onClick={()=>toggleFood(mi,f.id)} accent={f.f?"#f87171":"#34d399"}/>)}
+              </div>}
+            </div>;
+          })}
+          <input placeholder="Weitere Zutaten / Gewürze..." value={meal.note} style={{marginTop:8}} onChange={e=>{const m=[...cur.meals];m[mi]={...m[mi],note:e.target.value};upd("meals",m)}}/>
+        </div>)}
+        {fodmapWarn&&<div style={{background:"#f8717118",border:"1px solid #f87171",borderRadius:10,padding:"8px 12px",fontSize:12,color:"#f87171",marginBottom:12}}>⚠️ FODMAP-reiche Lebensmittel heute!</div>}
+        <button onClick={addMeal} style={{width:"100%",padding:10,borderRadius:10,fontSize:13,fontWeight:700,background:"#1a1a2a",border:"2px dashed #2a2a3a",color:"#555",cursor:"pointer"}}>+ Mahlzeit hinzufügen</button>
+      </Card>
+
+      <Card>
+        <STitle>💧 Wasser</STitle>
+        <Slider label="Getrunken heute" value={cur.waterMl} min={500} max={4000} color="#60a5fa" unit=" ml" onChange={v=>upd("waterMl",v)}/>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {[1000,1500,2000,2500,3000].map(ml=><Tag key={ml} small label={`${ml} ml`} active={cur.waterMl===ml} onClick={()=>upd("waterMl",ml)} accent="#60a5fa"/>)}
+        </div>
+      </Card>
+
+      <Card>
+        <STitle>🌡️ Symptome</STitle>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:16}}>
+          {SYMPTOMS.map(s=><Tag key={s.id} label={`${s.icon} ${s.label}`} active={!!cur.symptoms[s.id]} onClick={()=>toggleSym(s.id)} accent="#c084fc"/>)}
+        </div>
+        {SYMPTOMS.filter(s=>cur.symptoms[s.id]>0).map(s=><Slider key={s.id} label={`${s.icon} ${s.label} – Intensität`} value={cur.symptoms[s.id]||0} onChange={v=>setCur(c=>({...c,symptoms:{...c.symptoms,[s.id]:v}}))}/>)}
+        {Object.keys(cur.symptoms).filter(k=>cur.symptoms[k]).length>0&&<div style={{marginTop:8}}><div style={{fontSize:12,color:"#666",marginBottom:8}}>Wann aufgetreten?</div><input type="time" value={cur.symptomTime} style={{width:"auto"}} onChange={e=>upd("symptomTime",e.target.value)}/></div>}
+        {Object.keys(cur.symptoms).filter(k=>cur.symptoms[k]).length===0&&<div style={{fontSize:13,color:"#333",textAlign:"center",padding:"8px 0"}}>Keine Symptome = symptomfreier Tag 🎉</div>}
+      </Card>
+
+      <Card>
+        <STitle>🚽 Stuhlgang (Bristol-Skala)</STitle>
+        <Slider label="Häufigkeit heute" value={cur.bowelCount} min={0} max={8} color="#fb923c" unit="×" onChange={v=>upd("bowelCount",v)}/>
+        <div style={{fontSize:12,color:"#666",marginBottom:10}}>Konsistenz:</div>
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {BRISTOL.map(b=><button key={b.id} onClick={()=>upd("bristol",cur.bristol===b.id?null:b.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderRadius:10,border:cur.bristol===b.id?`2px solid ${b.color}`:"2px solid #2a2a3a",background:cur.bristol===b.id?`${b.color}22`:"#1a1a2a",cursor:"pointer",textAlign:"left"}}>
+            <span style={{width:28,height:28,borderRadius:6,background:b.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:"#fff",flexShrink:0}}>{b.id}</span>
+            <div><div style={{fontSize:12,fontWeight:700,color:cur.bristol===b.id?b.color:"#888"}}>{b.label}</div><div style={{fontSize:11,color:"#555"}}>{b.desc}</div></div>
+            {b.id===4&&<span style={{marginLeft:"auto",fontSize:10,color:"#34d399"}}>ideal</span>}
+          </button>)}
+        </div>
+      </Card>
+
+      <Card>
+        <STitle>🏃 Sport</STitle>
+        <div style={{display:"flex",gap:8,marginBottom:14}}>
+          <Tag label="Sport gemacht" active={cur.sport.done} onClick={()=>upd("sport",{...cur.sport,done:true})} accent="#34d399"/>
+          <Tag label="Kein Sport" active={!cur.sport.done} onClick={()=>upd("sport",{...cur.sport,done:false})} accent="#666"/>
+        </div>
+        {cur.sport.done&&<>
+          <div style={{marginBottom:12}}><div style={{fontSize:12,color:"#666",marginBottom:8}}>Sportart</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6}}>{SPORT_T.map(t=><Tag key={t} small label={t} active={cur.sport.type===t} onClick={()=>upd("sport",{...cur.sport,type:t})} accent="#34d399"/>)}</div>
+          </div>
+          <Slider label="Dauer" value={cur.sport.duration} min={10} max={240} color="#34d399" unit=" min" onChange={v=>upd("sport",{...cur.sport,duration:v})}/>
+          <Slider label="Intensität" value={cur.sport.intensity} color="#34d399" onChange={v=>upd("sport",{...cur.sport,intensity:v})}/>
+        </>}
+      </Card>
+
+      <Card>
+        <STitle>🧠 Wohlbefinden</STitle>
+        <div style={{marginBottom:14}}><div style={{fontSize:12,color:"#666",marginBottom:8}}>Stresslevel</div>
+          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{STRESS.map((l,i)=><Tag key={i} small label={l} active={cur.stress===i} onClick={()=>upd("stress",i)} accent="#fb923c"/>)}</div>
+        </div>
+        <div style={{marginBottom:14}}><div style={{fontSize:12,color:"#666",marginBottom:8}}>Schlafqualität</div>
+          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{SLEEP_Q.map((l,i)=><Tag key={i} small label={l} active={cur.sleep===i} onClick={()=>upd("sleep",i)} accent="#60a5fa"/>)}</div>
+        </div>
+        <Slider label="Schlafdauer" value={cur.sleepHours} min={3} max={12} color="#60a5fa" unit=" h" onChange={v=>upd("sleepHours",v)}/>
+        <div><div style={{fontSize:12,color:"#666",marginBottom:8}}>Zyklusphase (optional)</div>
+          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{CYCLE.map(p=><Tag key={p} small label={p} active={cur.cycle===p} onClick={()=>upd("cycle",cur.cycle===p?"":p)} accent="#f472b6"/>)}</div>
+        </div>
+      </Card>
+
+      <Card><STitle>📝 Notizen</STitle><textarea placeholder="Medikamente, Nahrungsergänzung, besondere Ereignisse..." value={cur.note} onChange={e=>upd("note",e.target.value)} rows={3}/></Card>
+
+      <button onClick={save} style={{width:"100%",padding:16,borderRadius:14,fontSize:16,fontWeight:800,background:"linear-gradient(135deg,#c084fc,#818cf8)",color:"#0d0d1a",border:"none",cursor:"pointer",boxShadow:"0 4px 24px #c084fc44"}}>Eintrag speichern →</button>
+    </>}
+
+    {view==="log"&&<>
+      {entries.length>0&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}><button onClick={exportCSV} style={{padding:"8px 16px",borderRadius:20,fontSize:12,fontWeight:700,background:"#1a1a2a",border:"1px solid #2a2a3a",color:"#34d399",cursor:"pointer"}}>⬇ CSV exportieren</button></div>}
+      {entries.length===0
+        ?<Card style={{textAlign:"center",padding:"40px 20px"}}>
+          <div style={{fontSize:40,marginBottom:12}}>📓</div>
+          <div style={{color:"#555",fontSize:14}}>Noch keine Einträge.</div>
+          <button onClick={()=>setView("entry")} style={{marginTop:16,padding:"10px 24px",borderRadius:20,fontSize:14,fontWeight:700,background:"#c084fc",color:"#0d0d1a",border:"none",cursor:"pointer"}}>Ersten Eintrag erstellen</button>
+        </Card>
+        :entries.map((e,i)=>{
+          const active=Object.entries(e.symptoms).filter(([,v])=>v>0);
+          const maxS=active.length?Math.max(...active.map(([,v])=>v)):0;
+          const sev=maxS>7?{l:"Stark",c:"#f87171"}:maxS>4?{l:"Mittel",c:"#fb923c"}:maxS>0?{l:"Leicht",c:"#c084fc"}:{l:"Symptomfrei",c:"#34d399"};
+          return <Card key={i}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
+              <div>
+                <div style={{fontWeight:800,fontSize:15,color:"#fff"}}>{e.date}</div>
+                {e.cycle&&<div style={{fontSize:11,color:"#f472b6",marginTop:2}}>{e.cycle}</div>}
+              </div>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                <span style={{padding:"3px 12px",borderRadius:20,fontSize:12,fontWeight:700,background:`${sev.c}22`,color:sev.c}}>{sev.l}</span>
+                <button onClick={()=>del(i)} style={{background:"none",border:"none",color:"#333",cursor:"pointer",fontSize:16}}>🗑</button>
+              </div>
+            </div>
+            {active.length>0&&<div style={{marginBottom:10}}>
+              <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                {active.map(([id,val])=>{const s=SYMPTOMS.find(x=>x.id===id);return<span key={id} style={{fontSize:11,padding:"2px 9px",borderRadius:10,background:"#c084fc18",color:"#c084fc",fontWeight:600}}>{s?.icon} {s?.label} {val}/10</span>;})}
+              </div>
+              {e.symptomTime&&<div style={{fontSize:11,color:"#555",marginTop:4}}>⏰ {e.symptomTime} Uhr</div>}
+            </div>}
+            <div style={{display:"flex",gap:12,flexWrap:"wrap",fontSize:12,color:"#555",marginBottom:8}}>
+              <span>💧 {e.waterMl} ml</span><span>😴 {SLEEP_Q[e.sleep]} ({e.sleepHours}h)</span>
+              <span>🧠 {STRESS[e.stress]}</span>
+              {e.sport.done&&<span>🏃 {e.sport.type||"Sport"} {e.sport.duration}min</span>}
+              {e.bristol&&<span>🚽 Bristol {e.bristol} ({e.bowelCount}×)</span>}
+            </div>
+            {e.meals.filter(m=>m.foods.length>0||m.note).map((m,mi)=><div key={mi} style={{fontSize:12,color:"#444",marginBottom:3}}><span style={{color:"#c084fc"}}>{m.time}</span> – {m.foods.map(f=>ALL_FOODS.find(x=>x.id===f)?.label).filter(Boolean).join(", ")}{m.note&&` + ${m.note}`}</div>)}
+            {e.note&&<div style={{marginTop:8,fontSize:12,color:"#444",fontStyle:"italic"}}>"{e.note}"</div>}
+          </Card>;
+        })
+      }
+    </>}
+
+    {view==="stats"&&<>
+      {entries.length<2
+        ?<Card style={{textAlign:"center",padding:"40px 20px"}}>
+          <div style={{fontSize:40,marginBottom:12}}>📊</div>
+          <div style={{color:"#555",fontSize:14}}>Mindestens 2 Einträge nötig.<br/>Du hast {entries.length} Eintrag{entries.length!==1?"e":""}.</div>
+          <button onClick={()=>setView("entry")} style={{marginTop:16,padding:"10px 24px",borderRadius:20,fontSize:14,fontWeight:700,background:"#c084fc",color:"#0d0d1a",border:"none",cursor:"pointer"}}>Eintrag erstellen</button>
+        </Card>
+        :<>
+          <Card>
+            <STitle>📊 Auswertung ({stats.n} Tage)</STitle>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              {[{label:"Ø Stress",value:STRESS[Math.round(stats.avgStress)],color:"#fb923c"},{label:"Ø Schlaf",value:SLEEP_Q[Math.round(stats.avgSleep)],color:"#60a5fa"},{label:"Ø Wasser",value:`${Math.round(stats.avgWater)} ml`,color:"#60a5fa"},{label:"Häufigstes Symptom",value:stats.topSym?SYMPTOMS.find(s=>s.id===stats.topSym[0])?.label||"–":"Keine",color:"#c084fc"}]
+                .map(item=><div key={item.label} style={{background:"#1a1a2a",borderRadius:12,padding:"12px 14px",border:"1px solid #2a2a3a"}}>
+                  <div style={{fontSize:11,color:"#555",marginBottom:4}}>{item.label}</div>
+                  <div style={{fontSize:14,fontWeight:700,color:item.color}}>{item.value}</div>
+                </div>)}
+            </div>
+          </Card>
+          {stats.ranked.length>0&&<Card>
+            <STitle>⚠️ Mögliche Auslöser</STitle>
+            <div style={{fontSize:12,color:"#555",marginBottom:12}}>Häufig an Tagen mit starken Symptomen:</div>
+            {stats.ranked.map((item,i)=><div key={item.id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,padding:"10px 12px",borderRadius:10,background:"#1a1a2a",border:"1px solid #2a2a3a"}}>
+              <span style={{width:24,height:24,borderRadius:6,background:i===0?"#f87171":i===1?"#fb923c":"#c084fc",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:"#0d0d1a",flexShrink:0}}>{i+1}</span>
+              <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700,color:"#e0e0f0"}}>{item.label}</div><div style={{fontSize:11,color:"#555"}}>{item.count}× gegessen</div></div>
+              <div style={{textAlign:"right"}}><div style={{fontSize:13,fontWeight:700,color:i===0?"#f87171":"#c084fc"}}>{item.avg.toFixed(1)}</div><div style={{fontSize:10,color:"#444"}}>Ø Symptomlast</div></div>
+            </div>)}
+            <div style={{fontSize:11,color:"#444",marginTop:8}}>* Korrelation ≠ Ursache.</div>
+          </Card>}
+          <Card>
+            <STitle>📅 Symptomverlauf</STitle>
+            {[...entries].reverse().map((e,i)=>{
+              const total=Object.values(e.symptoms).reduce((a,b)=>a+b,0);
+              const w=Math.min((total/50)*100,100);
+              const col=total>30?"#f87171":total>15?"#fb923c":total>0?"#c084fc":"#34d399";
+              return <div key={i} style={{marginBottom:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#555",marginBottom:4}}><span>{e.date}</span><span style={{color:col}}>Symptomlast: {total}</span></div>
+                <div style={{height:8,background:"#1a1a2a",borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",width:`${w}%`,background:col,borderRadius:4}}/></div>
+              </div>;
+            })}
+          </Card>
+        </>
+      }
+    </>}
+  </div>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
