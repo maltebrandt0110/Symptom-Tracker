@@ -25,6 +25,23 @@
 <script type="text/babel">
 const { useState, useEffect } = React;
 
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbygMo2_wkwaMUQTvjlmRjAKu6SqyZxwe1YHjQfUngJlxKqZ57hX5eoA4otizsSEpxYF/exec";
+
+async function syncToSheets(entry) {
+  try {
+    await fetch(SHEETS_URL, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(entry)
+    });
+    return true;
+  } catch(e) {
+    console.error("Sync fehlgeschlagen:", e);
+    return false;
+  }
+}
+
 const FOOD_CATEGORIES = [
   { category: "🥩 Protein", foods: [
     { id: "huhn", label: "Huhn / Pute", fodmap: false },
@@ -192,6 +209,8 @@ function App() {
   const [view, setView] = useState("entry");
   const [expanded, setExpanded] = useState(null);
   const [toast, setToast] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     try { localStorage.setItem("ibs-entries", JSON.stringify(entries)); } catch(e) {}
@@ -208,9 +227,16 @@ function App() {
     const times=["08:00","10:30","13:00","16:00","19:00","21:00"];
     setCur(c => ({...c, meals:[...c.meals,{time:times[Math.min(c.meals.length,5)],foods:[],note:""}]}));
   };
-  const save = () => {
-    setEntries(e=>[cur,...e]); setCur(emptyEntry());
-    setToast(true); setTimeout(()=>setToast(false),2000); setView("log");
+  const save = async () => {
+    const entry = {...cur};
+    setEntries(e=>[entry,...e]);
+    setCur(emptyEntry());
+    setView("log");
+    setSyncing(true);
+    const ok = await syncToSheets(entry);
+    setSyncing(false);
+    setToast(ok ? "✓ Gespeichert & synchronisiert!" : "✓ Lokal gespeichert (Sync fehlgeschlagen)");
+    setTimeout(()=>setToast(false), 3000);
   };
   const del = i => { if(window.confirm("Löschen?")) setEntries(e=>e.filter((_,j)=>j!==i)); };
 
@@ -234,7 +260,8 @@ function App() {
 
   return (
     <div style={{ minHeight:"100vh", maxWidth:540, margin:"0 auto", padding:"24px 16px 60px" }}>
-      {toast && <div style={{ position:"fixed",top:20,right:20,background:"#34d399",color:"#0d0d1a",padding:"10px 20px",borderRadius:12,fontWeight:700,fontSize:14,zIndex:999 }}>✓ Gespeichert!</div>}
+      {toast && <div style={{ position:"fixed",top:20,right:20,background:"#34d399",color:"#0d0d1a",padding:"10px 20px",borderRadius:12,fontWeight:700,fontSize:14,zIndex:999,maxWidth:280,textAlign:"center" }}>{toast}</div>}
+      {syncing && <div style={{ position:"fixed",top:20,right:20,background:"#1a1a2a",border:"1px solid #c084fc",color:"#c084fc",padding:"10px 20px",borderRadius:12,fontWeight:700,fontSize:14,zIndex:999 }}>⏳ Synchronisiere...</div>}
 
       <div style={{ marginBottom:24 }}>
         <div style={{ fontSize:11,letterSpacing:"0.2em",color:"#c084fc",fontWeight:700,marginBottom:4 }}>REIZDARM-TAGEBUCH</div>
